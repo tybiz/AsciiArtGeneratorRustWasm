@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>ASCII Art Generator</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0e0e0e;
+      color: #c8c8c8;
+      font-family: 'Courier New', Courier, monospace;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 60px 20px 40px;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 48px;
+    }
+
+    header h1 {
+      font-size: 1.4rem;
+      font-weight: normal;
+      color: #e8e8e8;
+      letter-spacing: 0.05em;
+    }
+
+    header h1 span { color: #6a6a6a; }
+
+    header p {
+      margin-top: 8px;
+      font-size: 0.78rem;
+      color: #555;
+      letter-spacing: 0.08em;
+    }
+
+    .controls {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      width: 100%;
+      max-width: 520px;
+      margin-bottom: 32px;
+    }
+
+    .upload-area {
+      width: 100%;
+      border: 1px solid #2a2a2a;
+      padding: 28px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s;
+      position: relative;
+    }
+
+    .upload-area:hover { border-color: #555; }
+    .upload-area.drag { border-color: #888; }
+
+    .upload-area input {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+      width: 100%;
+      height: 100%;
+    }
+
+    .upload-area p {
+      font-size: 0.8rem;
+      color: #555;
+      pointer-events: none;
+    }
+
+    .upload-area p span { color: #999; }
+
+    .row {
+      display: flex;
+      gap: 12px;
+      width: 100%;
+      align-items: center;
+    }
+
+    label {
+      font-size: 0.75rem;
+      color: #555;
+      white-space: nowrap;
+    }
+
+    input[type=range] {
+      flex: 1;
+      accent-color: #888;
+      background: transparent;
+    }
+
+    .val {
+      font-size: 0.75rem;
+      color: #888;
+      min-width: 32px;
+      text-align: right;
+    }
+
+    button {
+      background: none;
+      border: 1px solid #333;
+      color: #c8c8c8;
+      font-family: inherit;
+      font-size: 0.85rem;
+      padding: 10px 32px;
+      cursor: pointer;
+      letter-spacing: 0.1em;
+      transition: border-color 0.2s, color 0.2s;
+    }
+
+    button:hover:not(:disabled) { border-color: #888; color: #fff; }
+    button:disabled { color: #444; border-color: #222; cursor: default; }
+
+    #status {
+      font-size: 0.72rem;
+      color: #555;
+      letter-spacing: 0.06em;
+      min-height: 1.2em;
+    }
+
+    #status.err { color: #a04040; }
+
+    #output-wrap {
+      width: 100%;
+      max-width: 900px;
+      overflow-x: auto;
+    }
+
+    #output {
+      font-size: 7px;
+      line-height: 1.1;
+      color: #c8c8c8;
+      white-space: pre;
+      display: block;
+    }
+
+    canvas { display: none; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1><span>// </span>ascii_art.wasm</h1>
+  <p>image → ascii · compiled from rust · runs in your browser</p>
+</header>
+
+<div class="controls">
+  <div class="upload-area" id="drop-zone">
+    <input type="file" id="file-input" accept="image/*"/>
+    <p><span id="file-label">drop image or click to upload</span></p>
+  </div>
+
+  <div class="row">
+    <label>width (chars)</label>
+    <input type="range" id="out-w" min="1" max="240" value="120"/>
+    <span class="val" id="out-w-val">120</span>
+  </div>
+
+  <div class="row">
+    <label>height (chars)</label>
+    <input type="range" id="out-h" min="1" max="120" value="60"/>
+    <span class="val" id="out-h-val">60</span>
+  </div>
+
+  <button id="btn" disabled>generate →</button>
+
+  <span id="status">loading wasm…</span>
+</div>
+
+<div id="output-wrap">
+  <pre id="output"></pre>
+</div>
+
+<canvas id="canvas"></canvas>
+
+<script type="module">
+  import init, { to_ascii } from './pkg/ascii_generator_rust.js';
+
+  const status    = document.getElementById('status');
+  const btn       = document.getElementById('btn');
+  const fileIn    = document.getElementById('file-input');
+  const fileLabel = document.getElementById('file-label');
+  const outW      = document.getElementById('out-w');
+  const outH      = document.getElementById('out-h');
+  const outWVal   = document.getElementById('out-w-val');
+  const outHVal   = document.getElementById('out-h-val');
+  const output    = document.getElementById('output');
+  const canvas    = document.getElementById('canvas');
+  const ctx       = canvas.getContext('2d');
+  const drop      = document.getElementById('drop-zone');
+
+  let wasmReady = false;
+  let imgFile = null;
+  let imgWidth = 0;
+  let imgHeight = 0;
+
+  await init();
+  wasmReady = true;
+  status.textContent = '';
+  if (imgFile) btn.disabled = false;
+
+  function snapToValid(val, max) {
+    // ensure out_w/out_h divides evenly into image dimension (window >= 1)
+    // just clamp to image size — Rust handles the rest with clamp()
+    return Math.max(1, Math.min(val, max));
+  }
+
+  outW.oninput = () => {
+    const v = snapToValid(parseInt(outW.value), imgWidth || 240);
+    outW.value = v;
+    outWVal.textContent = v;
+  };
+
+  outH.oninput = () => {
+    const v = snapToValid(parseInt(outH.value), imgHeight || 120);
+    outH.value = v;
+    outHVal.textContent = v;
+  };
+
+  fileIn.onchange = e => loadFile(e.target.files[0]);
+
+  drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('drag'); });
+  drop.addEventListener('dragleave', () => drop.classList.remove('drag'));
+  drop.addEventListener('drop', e => {
+    e.preventDefault();
+    drop.classList.remove('drag');
+    loadFile(e.dataTransfer.files[0]);
+  });
+
+  function loadFile(f) {
+    if (!f) return;
+    imgFile = f;
+    fileLabel.textContent = f.name;
+    status.textContent = '';
+    status.className = '';
+
+    const img = new Image();
+    const url = URL.createObjectURL(f);
+    img.onload = () => {
+      imgWidth  = img.width;
+      imgHeight = img.height;
+
+      outW.max = imgWidth;
+      outH.max = imgHeight;
+      outW.value = Math.min(parseInt(outW.value), imgWidth);
+      outH.value = Math.min(parseInt(outH.value), imgHeight);
+      outWVal.textContent = outW.value;
+      outHVal.textContent = outH.value;
+
+      URL.revokeObjectURL(url);
+      if (wasmReady) btn.disabled = false;
+    };
+    img.src = url;
+  }
+
+  btn.onclick = () => {
+    if (!imgFile) return;
+    const img = new Image();
+    const url = URL.createObjectURL(imgFile);
+    img.onload = () => {
+      canvas.width  = img.width;
+      canvas.height = img.height;
+      ctx.drawImage(img, 0, 0);
+      URL.revokeObjectURL(url);
+
+      const w = parseInt(outW.value);
+      const h = parseInt(outH.value);
+      const rgba = ctx.getImageData(0, 0, img.width, img.height).data;
+
+      try {
+        const result = to_ascii(rgba, img.width, img.height, w, h);
+        output.textContent = result;
+        status.textContent = `${w}×${h} chars`;
+        status.className = '';
+      } catch(e) {
+        status.textContent = 'error: ' + e.message;
+        status.className = 'err';
+      }
+    };
+    img.src = url;
+  };
+</script>
+</body>
+</html>
