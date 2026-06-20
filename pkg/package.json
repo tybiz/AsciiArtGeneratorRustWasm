@@ -1,0 +1,15 @@
+{
+  "name": "ascii-generator-rust",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "ascii_generator_rust_bg.wasm",
+    "ascii_generator_rust.js",
+    "ascii_generator_rust.d.ts"
+  ],
+  "main": "ascii_generator_rust.js",
+  "types": "ascii_generator_rust.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
