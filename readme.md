@@ -1,4 +1,4 @@
-# ascii-generator-rust
+# AsciiArtGeneratorRustWasm
 
 Image to ASCII art generator. Written in Rust, compiled to WebAssembly, runs in the browser.
 
