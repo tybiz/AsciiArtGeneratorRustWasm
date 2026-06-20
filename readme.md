@@ -1,6 +1,7 @@
 # AsciiArtGeneratorRustWasm
 
 https://tybiz.github.io/AsciiArtGeneratorRustWasm/
+
 Image to ASCII art generator. Written in Rust, compiled to WebAssembly, runs in the browser.
 
 ## Usage
